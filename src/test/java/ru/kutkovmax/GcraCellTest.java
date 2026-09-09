@@ -9,27 +9,23 @@ class GcraCellTest {
     @Test
     void packsAndUnpacks() {
         long cell = GcraCell.pack(
-                42,
-                GcraState.OCCUPIED,
+                GcraCell.OCCUPIED,
                 123_456
         );
 
-        assertEquals(42, GcraCell.version(cell));
-        assertEquals(GcraState.OCCUPIED, GcraCell.state(cell));
+        assertEquals(GcraCell.OCCUPIED, GcraCell.state(cell));
         assertEquals(123_456, GcraCell.tat(cell));
     }
 
     @Test
     void supportsMaximumValues() {
         long cell = GcraCell.pack(
-                -1,
-                GcraState.EVICTING,
-                (1L << 30) - 1
+                GcraCell.EVICTING,
+                (1L << 62) - 1
         );
 
-        assertEquals(-1, GcraCell.version(cell));
-        assertEquals(GcraState.EVICTING, GcraCell.state(cell));
-        assertEquals((1L << 30) - 1, GcraCell.tat(cell));
+        assertEquals(GcraCell.EVICTING, GcraCell.state(cell));
+        assertEquals((1L << 62) - 1, GcraCell.tat(cell));
     }
 
     @Test
@@ -37,30 +33,16 @@ class GcraCellTest {
         long tat = 123_456;
 
         for (int state = 0; state < 4; state++) {
-            long cell = GcraCell.pack(10, state, tat);
+            long cell = GcraCell.pack(state, tat);
 
             assertEquals(tat, GcraCell.tat(cell));
             assertEquals(state, GcraCell.state(cell));
-            assertEquals(10, GcraCell.version(cell));
         }
     }
 
     @Test
-    void differentVersionsDoNotAffectLowerBits() {
-        long tat = 123_456;
-
-        long first = GcraCell.pack(1, GcraState.OCCUPIED, tat);
-        long second = GcraCell.pack(2, GcraState.OCCUPIED, tat);
-
-        assertEquals(tat, GcraCell.tat(first));
-        assertEquals(tat, GcraCell.tat(second));
-        assertEquals(
-                GcraState.OCCUPIED,
-                GcraCell.state(first)
-        );
-        assertEquals(
-                GcraState.OCCUPIED,
-                GcraCell.state(second)
-        );
+    void defaultEmptyCellIsZero() {
+        long empty = GcraCell.pack(GcraCell.EMPTY, 0);
+        assertEquals(0, empty);
     }
 }

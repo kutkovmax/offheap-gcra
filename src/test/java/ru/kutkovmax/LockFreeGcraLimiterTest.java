@@ -212,4 +212,79 @@ class LockFreeGcraLimiterTest {
         assertTrue(limiter.tryAcquire(42, 100));
         assertTrue(limiter.tryAcquire(43, 100));
     }
+
+    @Test
+    void evictsInactiveKey() {
+        LockFreeGcraLimiter limiter =
+                new LockFreeGcraLimiter(4, 100, 0, 1_000);
+
+        assertTrue(limiter.tryAcquire(1, 0));
+
+        limiter.clean(1_001);
+
+        assertTrue(limiter.tryAcquire(1, 1_001));
+    }
+
+
+
+    @Test
+    void doesNotEvictActiveKey() {
+        LockFreeGcraLimiter limiter =
+                new LockFreeGcraLimiter(4, 100, 0, 1_000);
+
+        assertTrue(limiter.tryAcquire(1, 0));
+
+        limiter.clean(500);
+
+        assertTrue(limiter.tryAcquire(1, 500));
+
+        limiter.clean(1_000);
+
+        assertTrue(limiter.tryAcquire(1, 1_000));
+    }
+
+    @Test
+    void concurrentAcquirePreventsEviction() throws Exception {
+        LockFreeGcraLimiter limiter =
+                new LockFreeGcraLimiter(1, 100, 0, 1_000);
+
+        assertTrue(limiter.tryAcquire(1, 0));
+
+        ExecutorService executor =
+                Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> cleaner =
+                    executor.submit(() -> limiter.clean(1_001));
+
+            Future<?> acquirer =
+                    executor.submit(() -> {
+                        for (int i = 0; i < 1_000; i++) {
+                            limiter.tryAcquire(1, 1_001 + i);
+                        }
+                    });
+
+            cleaner.get();
+            acquirer.get();
+
+            assertTrue(limiter.tryAcquire(1, 2_001));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void evictionDoesNotCorruptAnotherKey() {
+        LockFreeGcraLimiter limiter =
+                new LockFreeGcraLimiter(2, 100, 0, 1_000);
+
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(2, 500));
+
+        limiter.clean(1_001);
+
+        assertTrue(limiter.tryAcquire(1, 1_001));
+
+        assertTrue(limiter.tryAcquire(2, 1_001));
+    }
 }
