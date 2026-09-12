@@ -8,12 +8,7 @@ public final class GcraLimiter {
     private long tat;
 
     public GcraLimiter(long interval, long burstTolerance) {
-        if (interval <= 0) {
-            throw new IllegalArgumentException("interval must be positive");
-        }
-        if (burstTolerance < 0) {
-            throw new IllegalArgumentException("burstTolerance must be non-negative");
-        }
+        GcraMath.validateRateParameters(interval, burstTolerance);
         this.interval = interval;
         this.burstTolerance = burstTolerance;
     }
@@ -22,7 +17,7 @@ public final class GcraLimiter {
         if (now < tat - burstTolerance) {
             return false;
         }
-        tat = Math.max(tat, now) + interval;
+        tat = GcraMath.nextTat(tat, now, interval);
         return true;
     }
 }

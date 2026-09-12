@@ -45,6 +45,8 @@ public final class LockFreeGcraLimiter implements AutoCloseable {
             long burstTolerance,
             long evictionTimeout
     ) {
+        GcraMath.validateCapacity(capacity);
+        GcraMath.validateConfiguration(interval, burstTolerance, evictionTimeout);
         this.table = factory.create(capacity, interval, burstTolerance, evictionTimeout);
     }
 
@@ -69,11 +71,11 @@ public final class LockFreeGcraLimiter implements AutoCloseable {
         return table.tryAcquire(key);
     }
 
-    public boolean tryAcquire(long key, long now) {
+    boolean tryAcquire(long key, long now) {
         return table.tryAcquire(key, now);
     }
 
-    public void clean(long now) {
+    void clean(long now) {
         table.clean(now);
     }
 

@@ -38,18 +38,8 @@ final class OffHeapGcraTable implements GcraTable {
             long burstTolerance,
             long evictionTimeout
     ) {
-        if (capacity <= 0 || (capacity & (capacity - 1)) != 0) {
-            throw new IllegalArgumentException("capacity must be a positive power of two");
-        }
-        if (interval <= 0) {
-            throw new IllegalArgumentException("interval must be positive");
-        }
-        if (burstTolerance < 0) {
-            throw new IllegalArgumentException("burstTolerance must be non-negative");
-        }
-        if (evictionTimeout <= 0) {
-            throw new IllegalArgumentException("evictionTimeout must be positive");
-        }
+        GcraMath.validateCapacity(capacity);
+        GcraMath.validateConfiguration(interval, burstTolerance, evictionTimeout);
 
         long bytes = (long) capacity * ELEMENT.byteSize();
 
@@ -160,7 +150,7 @@ final class OffHeapGcraTable implements GcraTable {
                 return false;
             }
 
-            long newTat = Math.max(currentTat, now) + interval;
+            long newTat = GcraMath.nextTat(currentTat, now, interval);
             long newCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
 
             if (compareAndSet(cells, index, currentCell, newCell)) {
