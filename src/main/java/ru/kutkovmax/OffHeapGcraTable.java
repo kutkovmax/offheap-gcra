@@ -68,6 +68,7 @@ final class OffHeapGcraTable implements GcraTable {
     @Override
     public int findOrClaim(long key, long now) {
         int start = indexFor(key);
+        int expiredIndex = -1;
 
         for (int i = 0; i < capacity; i++) {
             int index = (start + i) & mask;
@@ -80,6 +81,12 @@ final class OffHeapGcraTable implements GcraTable {
                     if (getPlain(keys, index) == key) {
                         return index;
                     }
+
+                    long last = getAcquire(lastAccess, index);
+                    if (expiredIndex < 0 && now - last >= evictionTimeout) {
+                        expiredIndex = index;
+                    }
+
                     break;
                 }
 
@@ -89,6 +96,37 @@ final class OffHeapGcraTable implements GcraTable {
                 }
 
                 if (state == GcraCell.EMPTY) {
+                    if (expiredIndex >= 0) {
+                        int target = expiredIndex;
+
+                        long targetCell = getVolatile(cells, target);
+                        if (GcraCell.state(targetCell) != GcraCell.OCCUPIED) {
+                            expiredIndex = -1;
+                            continue;
+                        }
+
+                        long targetLast = getAcquire(lastAccess, target);
+                        if (now - targetLast < evictionTimeout) {
+                            expiredIndex = -1;
+                            continue;
+                        }
+
+                        long targetTat = GcraCell.tat(targetCell);
+                        long claimingCell = GcraCell.pack(GcraCell.CLAIMING, targetTat);
+
+                        if (!compareAndSet(cells, target, targetCell, claimingCell)) {
+                            expiredIndex = -1;
+                            continue;
+                        }
+
+                        setRelease(keys, target, key);
+
+                        long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, now);
+                        setVolatile(cells, target, occupiedCell);
+
+                        return target;
+                    }
+
                     long emptyCell = GcraCell.pack(GcraCell.EMPTY, 0);
                     if (cell != emptyCell) {
                         continue;
@@ -101,8 +139,7 @@ final class OffHeapGcraTable implements GcraTable {
 
                     setRelease(keys, index, key);
 
-                    long tat = now;
-                    long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, tat);
+                    long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, now);
                     setVolatile(cells, index, occupiedCell);
 
                     return index;
@@ -110,6 +147,34 @@ final class OffHeapGcraTable implements GcraTable {
 
                 throw new IllegalStateException("Unexpected cell state: " + state);
             }
+        }
+
+        if (expiredIndex >= 0) {
+            int index = expiredIndex;
+
+            long cell = getVolatile(cells, index);
+            if (GcraCell.state(cell) != GcraCell.OCCUPIED) {
+                return -1;
+            }
+
+            long last = getAcquire(lastAccess, index);
+            if (now - last < evictionTimeout) {
+                return -1;
+            }
+
+            long tat = GcraCell.tat(cell);
+            long claimingCell = GcraCell.pack(GcraCell.CLAIMING, tat);
+
+            if (!compareAndSet(cells, index, cell, claimingCell)) {
+                return -1;
+            }
+
+            setRelease(keys, index, key);
+
+            long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, now);
+            setVolatile(cells, index, occupiedCell);
+
+            return index;
         }
 
         return -1;
@@ -200,22 +265,7 @@ final class OffHeapGcraTable implements GcraTable {
             return;
         }
 
-        long currentTat = GcraCell.tat(currentCell);
-        long evictingCell = GcraCell.pack(GcraCell.EVICTING, currentTat);
 
-        if (!compareAndSet(cells, index, currentCell, evictingCell)) {
-            return;
-        }
-
-        long currentLast = getAcquire(lastAccess, index);
-        if (currentLast != last) {
-            compareAndSet(cells, index, evictingCell, currentCell);
-            return;
-        }
-
-        setRelease(keys, index, 0);
-        setRelease(lastAccess, index, 0);
-        setVolatile(cells, index, GcraCell.pack(GcraCell.EMPTY, 0));
     }
 
     @Override
