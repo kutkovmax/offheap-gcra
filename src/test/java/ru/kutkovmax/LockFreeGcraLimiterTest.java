@@ -1,12 +1,14 @@
 package ru.kutkovmax;
 
 import org.junit.jupiter.api.Test;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class LockFreeGcraLimiterTest {
@@ -14,99 +16,99 @@ class LockFreeGcraLimiterTest {
     @Test
     void allowsFirstRequest() {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(100, 0);
+                new LockFreeGcraLimiter(16, 100, 0);
 
-        assertTrue(limiter.tryAcquire(0));
+        assertTrue(limiter.tryAcquire(1, 0));
     }
 
     @Test
     void rejectsSecondRequestTooSoonWithoutBurst() {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(100, 0);
+                new LockFreeGcraLimiter(16, 100, 0);
 
-        assertTrue(limiter.tryAcquire(0));
-        assertFalse(limiter.tryAcquire(50));
-        assertFalse(limiter.tryAcquire(99));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertFalse(limiter.tryAcquire(1, 50));
+        assertFalse(limiter.tryAcquire(1, 99));
     }
 
     @Test
     void allowsSecondRequestAfterInterval() {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(100, 0);
+                new LockFreeGcraLimiter(16, 100, 0);
 
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(100));
-        assertTrue(limiter.tryAcquire(200));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(1, 100));
+        assertTrue(limiter.tryAcquire(1, 200));
     }
 
     @Test
     void allowsBurstWithinTolerance() {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(100, 250);
+                new LockFreeGcraLimiter(16, 100, 250);
 
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(1, 0));
     }
 
     @Test
     void rejectsWhenBurstToleranceIsExhausted() {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(100, 250);
+                new LockFreeGcraLimiter(16, 100, 250);
 
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
-        assertFalse(limiter.tryAcquire(0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertFalse(limiter.tryAcquire(1, 0));
     }
 
     @Test
     void burstRecoversOverTime() {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(100, 200);
+                new LockFreeGcraLimiter(16, 100, 200);
 
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(1, 0));
 
-        assertFalse(limiter.tryAcquire(0));
+        assertFalse(limiter.tryAcquire(1, 0));
 
-        assertTrue(limiter.tryAcquire(100));
-        assertFalse(limiter.tryAcquire(100));
+        assertTrue(limiter.tryAcquire(1, 100));
+        assertFalse(limiter.tryAcquire(1, 100));
     }
 
     @Test
     void exactToleranceBoundaryIsAccepted() {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(100, 100);
+                new LockFreeGcraLimiter(16, 100, 100);
 
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(1, 0));
 
-        assertTrue(limiter.tryAcquire(100));
+        assertTrue(limiter.tryAcquire(1, 100));
     }
 
     @Test
     void justBeforeToleranceBoundaryIsRejected() {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(100, 100);
+                new LockFreeGcraLimiter(16, 100, 100);
 
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertTrue(limiter.tryAcquire(1, 0));
 
-        assertFalse(limiter.tryAcquire(99));
+        assertFalse(limiter.tryAcquire(1, 99));
     }
 
     @Test
     void rejectsInvalidInterval() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new LockFreeGcraLimiter(0, 10)
+                () -> new LockFreeGcraLimiter(16, 0, 10)
         );
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new LockFreeGcraLimiter(-1, 10)
+                () -> new LockFreeGcraLimiter(16, -1, 10)
         );
     }
 
@@ -114,7 +116,7 @@ class LockFreeGcraLimiterTest {
     void rejectsInvalidBurstTolerance() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new LockFreeGcraLimiter(100, -1)
+                () -> new LockFreeGcraLimiter(16, 100, -1)
         );
     }
 
@@ -124,7 +126,7 @@ class LockFreeGcraLimiterTest {
                 new GcraLimiter(100, 200);
 
         LockFreeGcraLimiter lockFree =
-                new LockFreeGcraLimiter(100, 200);
+                new LockFreeGcraLimiter(16, 100, 200);
 
         long[] timestamps = {
                 0,
@@ -143,7 +145,7 @@ class LockFreeGcraLimiterTest {
         for (long now : timestamps) {
             assertEquals(
                     reference.tryAcquire(now),
-                    lockFree.tryAcquire(now),
+                    lockFree.tryAcquire(1, now),
                     "Mismatch at timestamp " + now
             );
         }
@@ -152,7 +154,7 @@ class LockFreeGcraLimiterTest {
     @Test
     void supportsConcurrentAccess() throws Exception {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(1, 0);
+                new LockFreeGcraLimiter(16, 1, 0);
 
         int threads = 8;
         int attemptsPerThread = 10_000;
@@ -168,7 +170,7 @@ class LockFreeGcraLimiterTest {
         for (int i = 0; i < threads; i++) {
             futures.add(executor.submit(() -> {
                 for (int j = 0; j < attemptsPerThread; j++) {
-                    if (limiter.tryAcquire(j)) {
+                    if (limiter.tryAcquire(1, j)) {
                         accepted.incrementAndGet();
                     }
                 }
@@ -185,12 +187,29 @@ class LockFreeGcraLimiterTest {
     }
 
     @Test
-    void cellContainsExpectedState() {
+    void differentKeysHaveIndependentLimits() {
         LockFreeGcraLimiter limiter =
-                new LockFreeGcraLimiter(100, 200);
+                new LockFreeGcraLimiter(16, 100, 0);
 
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
-        assertTrue(limiter.tryAcquire(0));
+        assertTrue(limiter.tryAcquire(1, 0));
+        assertFalse(limiter.tryAcquire(1, 0));
+
+        assertTrue(limiter.tryAcquire(2, 0));
+        assertFalse(limiter.tryAcquire(2, 0));
+    }
+
+    @Test
+    void sameKeyAlwaysUsesSameRateLimitState() {
+        LockFreeGcraLimiter limiter =
+                new LockFreeGcraLimiter(16, 100, 0);
+
+        assertTrue(limiter.tryAcquire(42, 0));
+        assertFalse(limiter.tryAcquire(42, 0));
+
+        assertTrue(limiter.tryAcquire(43, 0));
+        assertFalse(limiter.tryAcquire(43, 0));
+
+        assertTrue(limiter.tryAcquire(42, 100));
+        assertTrue(limiter.tryAcquire(43, 100));
     }
 }
