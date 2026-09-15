@@ -599,6 +599,8 @@ class EvictionConcurrencyRegressionTest {
                     "B must reuse A's slot"
             );
 
+            assertTrue(table.tryAcquire(keyB, now + 20), "First acquire for B must succeed");
+
             boolean mutated = tryAcquireCell(table, indexA, keyA, now + 20);
             assertFalse(mutated, "Stale index call for Key A must not succeed on slot owned by Key B");
 
