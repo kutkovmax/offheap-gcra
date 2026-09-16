@@ -5,6 +5,7 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.util.concurrent.atomic.AtomicInteger;
 
 final class OffHeapGcraTable implements GcraTable {
 
@@ -15,6 +16,12 @@ final class OffHeapGcraTable implements GcraTable {
     static {
         LONG_AT = ValueLayout.JAVA_LONG.varHandle();
     }
+
+    private static final int OPEN = 0;
+    private static final int CLOSING = 1;
+    private static final int CLOSED = 2;
+
+    private final AtomicInteger lifecycle = new AtomicInteger(OPEN);
 
     private final Arena arena;
     private final MemorySegment keys;
@@ -30,6 +37,12 @@ final class OffHeapGcraTable implements GcraTable {
 
     private final Thread cleaner;
     private volatile boolean running;
+
+    private void checkOpen() {
+        if (lifecycle.get() != OPEN) {
+            throw new IllegalStateException("Limiter is closed");
+        }
+    }
 
     OffHeapGcraTable(
             int capacity,
@@ -66,6 +79,7 @@ final class OffHeapGcraTable implements GcraTable {
 
     @Override
     public int findOrClaim(long key, long now) {
+        checkOpen();
         int start = indexFor(key);
 
         retry:
@@ -143,6 +157,7 @@ final class OffHeapGcraTable implements GcraTable {
 
     @Override
     public boolean tryAcquire(long key, long now) {
+        checkOpen();
         int start = indexFor(key);
 
         retry:
@@ -275,6 +290,7 @@ final class OffHeapGcraTable implements GcraTable {
 
     @Override
     public void clean(long now) {
+        checkOpen();
         for (int index = 0; index < capacity; index++) {
             cleanCell(index, now);
         }
@@ -302,6 +318,9 @@ final class OffHeapGcraTable implements GcraTable {
 
     @Override
     public void close() {
+        if (!lifecycle.compareAndSet(OPEN, CLOSING)) {
+            return;
+        }
         running = false;
         cleaner.interrupt();
         try {
@@ -309,6 +328,7 @@ final class OffHeapGcraTable implements GcraTable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+        lifecycle.set(CLOSED);
         arena.close();
     }
 

@@ -326,4 +326,24 @@ class LockFreeGcraLimiterTest {
 
         assertTrue(limiter.tryAcquire(2, 1_001));
     }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("factories")
+    void throwsWhenAcquiringAfterClose(String name, LockFreeGcraLimiter.TableFactory factory) {
+        limiter = create(factory, 16, 100, 0);
+        limiter.close();
+
+        assertThrows(IllegalStateException.class, () -> limiter.tryAcquire(1));
+        assertThrows(IllegalStateException.class, () -> limiter.tryAcquire(1, 100));
+        assertThrows(IllegalStateException.class, () -> limiter.clean(100));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("factories")
+    void closingMultipleTimesIsIdempotent(String name, LockFreeGcraLimiter.TableFactory factory) {
+        limiter = create(factory, 16, 100, 0);
+        limiter.close();
+        assertDoesNotThrow(() -> limiter.close());
+        assertDoesNotThrow(() -> limiter.close());
+    }
 }
