@@ -104,6 +104,54 @@ class ConfigurationValidationTest {
         }
     }
 
+    @org.junit.jupiter.api.Test
+    void rejectsNullDurations() {
+        assertThrows(NullPointerException.class, () -> LockFreeGcraLimiter.heap(16, null, java.time.Duration.ofMillis(10)));
+        assertThrows(NullPointerException.class, () -> LockFreeGcraLimiter.heap(16, java.time.Duration.ofMillis(10), null));
+        assertThrows(NullPointerException.class, () -> LockFreeGcraLimiter.offHeap(16, null, java.time.Duration.ofMillis(10)));
+        assertThrows(NullPointerException.class, () -> LockFreeGcraLimiter.offHeap(16, java.time.Duration.ofMillis(10), null));
+        assertThrows(NullPointerException.class, () -> new LockFreeGcraLimiter(16, null, java.time.Duration.ofMillis(10)));
+    }
+
+    @org.junit.jupiter.api.Test
+    void rejectsNegativeAndZeroDurationInterval() {
+        assertThrows(IllegalArgumentException.class, () -> LockFreeGcraLimiter.heap(16, java.time.Duration.ZERO, java.time.Duration.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> LockFreeGcraLimiter.heap(16, java.time.Duration.ofMillis(-5), java.time.Duration.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> LockFreeGcraLimiter.offHeap(16, java.time.Duration.ZERO, java.time.Duration.ZERO));
+        assertThrows(IllegalArgumentException.class, () -> LockFreeGcraLimiter.offHeap(16, java.time.Duration.ofMillis(-5), java.time.Duration.ZERO));
+    }
+
+    @org.junit.jupiter.api.Test
+    void acceptsValidDurationConfigurations() {
+        assertDoesNotThrow(() -> {
+            try (LockFreeGcraLimiter limiter = LockFreeGcraLimiter.heap(
+                    16,
+                    java.time.Duration.ofMillis(10),
+                    java.time.Duration.ofMillis(50),
+                    java.time.Duration.ofSeconds(10)
+            )) {
+                org.junit.jupiter.api.Assertions.assertTrue(limiter.tryAcquire(1));
+            }
+
+            try (LockFreeGcraLimiter limiter = LockFreeGcraLimiter.offHeap(
+                    16,
+                    java.time.Duration.ofMillis(10),
+                    java.time.Duration.ofMillis(50),
+                    java.time.Duration.ofSeconds(10)
+            )) {
+                org.junit.jupiter.api.Assertions.assertTrue(limiter.tryAcquire(1));
+            }
+
+            try (LockFreeGcraLimiter limiter = new LockFreeGcraLimiter(
+                    16,
+                    java.time.Duration.ofMillis(10),
+                    java.time.Duration.ofMillis(50)
+            )) {
+                org.junit.jupiter.api.Assertions.assertTrue(limiter.tryAcquire(1));
+            }
+        });
+    }
+
     private static LockFreeGcraLimiter createLimiter(
             LockFreeGcraLimiter.TableFactory factory,
             int capacity,

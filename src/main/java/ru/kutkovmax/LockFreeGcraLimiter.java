@@ -1,10 +1,15 @@
 package ru.kutkovmax;
 
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+
 public final class LockFreeGcraLimiter implements AutoCloseable {
+
+    private static final long DEFAULT_EVICTION_TIMEOUT_NANOS = 60_000_000_000L; // 60s in nanos
 
     @FunctionalInterface
     interface TableFactory {
-        GcraTable create(int capacity, long interval, long burstTolerance, long evictionTimeout);
+        GcraTable create(int capacity, long intervalNanos, long burstToleranceNanos, long evictionTimeoutNanos);
     }
 
     static final TableFactory HEAP_FACTORY = HeapGcraTable::new;
@@ -13,59 +18,122 @@ public final class LockFreeGcraLimiter implements AutoCloseable {
     private final GcraTable table;
     private volatile AutoCloseable cleanerHandle;
 
-    public static LockFreeGcraLimiter heap(int capacity, long interval, long burstTolerance) {
-        return new LockFreeGcraLimiter(HEAP_FACTORY, capacity, interval, burstTolerance, 60_000_000_000L);
+    // --- Heap factory methods with Duration ---
+
+    public static LockFreeGcraLimiter heap(int capacity, Duration interval, Duration burstTolerance) {
+        return heap(capacity, interval, burstTolerance, Duration.ofNanos(DEFAULT_EVICTION_TIMEOUT_NANOS));
     }
 
     public static LockFreeGcraLimiter heap(
             int capacity,
-            long interval,
-            long burstTolerance,
-            long evictionTimeout
+            Duration interval,
+            Duration burstTolerance,
+            Duration evictionTimeout
     ) {
-        return new LockFreeGcraLimiter(HEAP_FACTORY, capacity, interval, burstTolerance, evictionTimeout);
+        long intervalNanos = GcraMath.toNanos(interval, "interval");
+        long burstToleranceNanos = GcraMath.toNanos(burstTolerance, "burstTolerance");
+        long evictionTimeoutNanos = GcraMath.toNanos(evictionTimeout, "evictionTimeout");
+        return new LockFreeGcraLimiter(HEAP_FACTORY, capacity, intervalNanos, burstToleranceNanos, evictionTimeoutNanos);
     }
 
-    public static LockFreeGcraLimiter offHeap(int capacity, long interval, long burstTolerance) {
-        return new LockFreeGcraLimiter(OFF_HEAP_FACTORY, capacity, interval, burstTolerance, 60_000_000_000L);
+    // --- Heap factory methods with nanoseconds ---
+
+    public static LockFreeGcraLimiter heap(int capacity, long intervalNanos, long burstToleranceNanos) {
+        return new LockFreeGcraLimiter(HEAP_FACTORY, capacity, intervalNanos, burstToleranceNanos, DEFAULT_EVICTION_TIMEOUT_NANOS);
+    }
+
+    public static LockFreeGcraLimiter heap(
+            int capacity,
+            long intervalNanos,
+            long burstToleranceNanos,
+            long evictionTimeoutNanos
+    ) {
+        return new LockFreeGcraLimiter(HEAP_FACTORY, capacity, intervalNanos, burstToleranceNanos, evictionTimeoutNanos);
+    }
+
+    // --- Off-heap factory methods with Duration ---
+
+    public static LockFreeGcraLimiter offHeap(int capacity, Duration interval, Duration burstTolerance) {
+        return offHeap(capacity, interval, burstTolerance, Duration.ofNanos(DEFAULT_EVICTION_TIMEOUT_NANOS));
     }
 
     public static LockFreeGcraLimiter offHeap(
             int capacity,
-            long interval,
-            long burstTolerance,
-            long evictionTimeout
+            Duration interval,
+            Duration burstTolerance,
+            Duration evictionTimeout
     ) {
-        return new LockFreeGcraLimiter(OFF_HEAP_FACTORY, capacity, interval, burstTolerance, evictionTimeout);
+        long intervalNanos = GcraMath.toNanos(interval, "interval");
+        long burstToleranceNanos = GcraMath.toNanos(burstTolerance, "burstTolerance");
+        long evictionTimeoutNanos = GcraMath.toNanos(evictionTimeout, "evictionTimeout");
+        return new LockFreeGcraLimiter(OFF_HEAP_FACTORY, capacity, intervalNanos, burstToleranceNanos, evictionTimeoutNanos);
+    }
+
+    // --- Off-heap factory methods with nanoseconds ---
+
+    public static LockFreeGcraLimiter offHeap(int capacity, long intervalNanos, long burstToleranceNanos) {
+        return new LockFreeGcraLimiter(OFF_HEAP_FACTORY, capacity, intervalNanos, burstToleranceNanos, DEFAULT_EVICTION_TIMEOUT_NANOS);
+    }
+
+    public static LockFreeGcraLimiter offHeap(
+            int capacity,
+            long intervalNanos,
+            long burstToleranceNanos,
+            long evictionTimeoutNanos
+    ) {
+        return new LockFreeGcraLimiter(OFF_HEAP_FACTORY, capacity, intervalNanos, burstToleranceNanos, evictionTimeoutNanos);
     }
 
     LockFreeGcraLimiter(
             TableFactory factory,
             int capacity,
-            long interval,
-            long burstTolerance,
-            long evictionTimeout
+            long intervalNanos,
+            long burstToleranceNanos,
+            long evictionTimeoutNanos
     ) {
         GcraMath.validateCapacity(capacity);
-        GcraMath.validateConfiguration(interval, burstTolerance, evictionTimeout);
-        this.table = factory.create(capacity, interval, burstTolerance, evictionTimeout);
+        GcraMath.validateConfiguration(intervalNanos, burstToleranceNanos, evictionTimeoutNanos);
+        this.table = factory.create(capacity, intervalNanos, burstToleranceNanos, evictionTimeoutNanos);
+    }
+
+    // --- Constructors with Duration ---
+
+    public LockFreeGcraLimiter(int capacity, Duration interval, Duration burstTolerance) {
+        this(capacity, interval, burstTolerance, Duration.ofNanos(DEFAULT_EVICTION_TIMEOUT_NANOS));
     }
 
     public LockFreeGcraLimiter(
             int capacity,
-            long interval,
-            long burstTolerance
+            Duration interval,
+            Duration burstTolerance,
+            Duration evictionTimeout
     ) {
-        this(OFF_HEAP_FACTORY, capacity, interval, burstTolerance, 60_000_000_000L);
+        this(
+                OFF_HEAP_FACTORY,
+                capacity,
+                GcraMath.toNanos(interval, "interval"),
+                GcraMath.toNanos(burstTolerance, "burstTolerance"),
+                GcraMath.toNanos(evictionTimeout, "evictionTimeout")
+        );
+    }
+
+    // --- Constructors with nanoseconds ---
+
+    public LockFreeGcraLimiter(
+            int capacity,
+            long intervalNanos,
+            long burstToleranceNanos
+    ) {
+        this(OFF_HEAP_FACTORY, capacity, intervalNanos, burstToleranceNanos, DEFAULT_EVICTION_TIMEOUT_NANOS);
     }
 
     public LockFreeGcraLimiter(
             int capacity,
-            long interval,
-            long burstTolerance,
-            long evictionTimeout
+            long intervalNanos,
+            long burstToleranceNanos,
+            long evictionTimeoutNanos
     ) {
-        this(OFF_HEAP_FACTORY, capacity, interval, burstTolerance, evictionTimeout);
+        this(OFF_HEAP_FACTORY, capacity, intervalNanos, burstToleranceNanos, evictionTimeoutNanos);
     }
 
     public synchronized void scheduleEviction(long periodNanos) {

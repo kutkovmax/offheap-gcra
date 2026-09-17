@@ -11,31 +11,40 @@ final class GcraMath {
         }
     }
 
-    static void validateRateParameters(long interval, long burstTolerance) {
-        if (interval <= 0) {
-            throw new IllegalArgumentException("interval must be positive, got " + interval);
-        }
-        if (burstTolerance < 0) {
-            throw new IllegalArgumentException("burstTolerance must be non-negative, got " + burstTolerance);
-        }
-        if (interval > GcraCell.MAX_TAT) {
-            throw new IllegalArgumentException(
-                    "interval exceeds " + GcraCell.TAT_BITS + "-bit TAT range: " + interval + " > " + GcraCell.MAX_TAT);
-        }
-        if (burstTolerance > GcraCell.MAX_TAT) {
-            throw new IllegalArgumentException(
-                    "burstTolerance exceeds " + GcraCell.TAT_BITS + "-bit TAT range: " + burstTolerance + " > " + GcraCell.MAX_TAT);
+    static long toNanos(java.time.Duration duration, String paramName) {
+        java.util.Objects.requireNonNull(duration, paramName + " must not be null");
+        try {
+            return duration.toNanos();
+        } catch (ArithmeticException e) {
+            throw new IllegalArgumentException(paramName + " exceeds supported nanosecond range: " + duration, e);
         }
     }
 
-    static void validateConfiguration(long interval, long burstTolerance, long evictionTimeout) {
-        validateRateParameters(interval, burstTolerance);
-        if (evictionTimeout <= 0) {
-            throw new IllegalArgumentException("evictionTimeout must be positive, got " + evictionTimeout);
+    static void validateRateParameters(long intervalNanos, long burstToleranceNanos) {
+        if (intervalNanos <= 0) {
+            throw new IllegalArgumentException("interval must be positive, got " + intervalNanos);
         }
-        if (evictionTimeout > GcraCell.MAX_TAT) {
+        if (burstToleranceNanos < 0) {
+            throw new IllegalArgumentException("burstTolerance must be non-negative, got " + burstToleranceNanos);
+        }
+        if (intervalNanos > GcraCell.MAX_TAT) {
             throw new IllegalArgumentException(
-                    "evictionTimeout exceeds " + GcraCell.TAT_BITS + "-bit TAT range: " + evictionTimeout + " > " + GcraCell.MAX_TAT);
+                    "interval exceeds " + GcraCell.TAT_BITS + "-bit TAT range: " + intervalNanos + " > " + GcraCell.MAX_TAT);
+        }
+        if (burstToleranceNanos > GcraCell.MAX_TAT) {
+            throw new IllegalArgumentException(
+                    "burstTolerance exceeds " + GcraCell.TAT_BITS + "-bit TAT range: " + burstToleranceNanos + " > " + GcraCell.MAX_TAT);
+        }
+    }
+
+    static void validateConfiguration(long intervalNanos, long burstToleranceNanos, long evictionTimeoutNanos) {
+        validateRateParameters(intervalNanos, burstToleranceNanos);
+        if (evictionTimeoutNanos <= 0) {
+            throw new IllegalArgumentException("evictionTimeout must be positive, got " + evictionTimeoutNanos);
+        }
+        if (evictionTimeoutNanos > GcraCell.MAX_TAT) {
+            throw new IllegalArgumentException(
+                    "evictionTimeout exceeds " + GcraCell.TAT_BITS + "-bit TAT range: " + evictionTimeoutNanos + " > " + GcraCell.MAX_TAT);
         }
     }
 
