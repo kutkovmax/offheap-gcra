@@ -26,9 +26,6 @@ final class HeapGcraTable implements GcraTable {
     private final long burstTolerance;
     private final long evictionTimeout;
 
-    private final Thread cleaner;
-    private volatile boolean running;
-
     private void checkOpen() {
         if (lifecycle.get() != OPEN) {
             throw new IllegalStateException("Limiter is closed");
@@ -52,11 +49,6 @@ final class HeapGcraTable implements GcraTable {
         this.interval = interval;
         this.burstTolerance = burstTolerance;
         this.evictionTimeout = evictionTimeout;
-
-        this.running = true;
-        this.cleaner = new Thread(this::cleanerLoop, "gcra-cleaner");
-        this.cleaner.setDaemon(true);
-        this.cleaner.start();
     }
 
     HeapGcraTable(int capacity, long interval, long burstTolerance) {
@@ -259,22 +251,6 @@ final class HeapGcraTable implements GcraTable {
         return ((int) x) & mask;
     }
 
-    private void cleanerLoop() {
-        long sleepNanos = Math.max(10_000_000L, evictionTimeout / 2);
-        long sleepMillis = sleepNanos / 1_000_000L;
-        int sleepNanosPart = (int) (sleepNanos % 1_000_000L);
-
-        while (running) {
-            try {
-                Thread.sleep(sleepMillis, sleepNanosPart);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            clean(TimeProvider.nowNanos());
-        }
-    }
-
     @Override
     public void clean(long now) {
         checkOpen();
@@ -308,13 +284,6 @@ final class HeapGcraTable implements GcraTable {
     public void close() {
         if (!lifecycle.compareAndSet(OPEN, CLOSING)) {
             return;
-        }
-        running = false;
-        cleaner.interrupt();
-        try {
-            cleaner.join(1000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
         lifecycle.set(CLOSED);
     }
