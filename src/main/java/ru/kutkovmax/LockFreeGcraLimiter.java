@@ -1,15 +1,59 @@
 package ru.kutkovmax;
 
-public final class LockFreeGcraLimiter {
+public final class LockFreeGcraLimiter implements AutoCloseable {
+
+    @FunctionalInterface
+    interface TableFactory {
+        GcraTable create(int capacity, long interval, long burstTolerance, long evictionTimeout);
+    }
+
+    static final TableFactory HEAP_FACTORY = HeapGcraTable::new;
+    static final TableFactory OFF_HEAP_FACTORY = OffHeapGcraTable::new;
 
     private final GcraTable table;
+
+    public static LockFreeGcraLimiter heap(int capacity, long interval, long burstTolerance) {
+        return new LockFreeGcraLimiter(HEAP_FACTORY, capacity, interval, burstTolerance, 60_000);
+    }
+
+    public static LockFreeGcraLimiter heap(
+            int capacity,
+            long interval,
+            long burstTolerance,
+            long evictionTimeout
+    ) {
+        return new LockFreeGcraLimiter(HEAP_FACTORY, capacity, interval, burstTolerance, evictionTimeout);
+    }
+
+    public static LockFreeGcraLimiter offHeap(int capacity, long interval, long burstTolerance) {
+        return new LockFreeGcraLimiter(OFF_HEAP_FACTORY, capacity, interval, burstTolerance, 60_000);
+    }
+
+    public static LockFreeGcraLimiter offHeap(
+            int capacity,
+            long interval,
+            long burstTolerance,
+            long evictionTimeout
+    ) {
+        return new LockFreeGcraLimiter(OFF_HEAP_FACTORY, capacity, interval, burstTolerance, evictionTimeout);
+    }
+
+    LockFreeGcraLimiter(
+            TableFactory factory,
+            int capacity,
+            long interval,
+            long burstTolerance,
+            long evictionTimeout
+    ) {
+        this.table = factory.create(capacity, interval, burstTolerance, evictionTimeout);
+    }
 
     public LockFreeGcraLimiter(
             int capacity,
             long interval,
             long burstTolerance
     ) {
-        this(capacity, interval, burstTolerance, 60_000);
+        this(OFF_HEAP_FACTORY, capacity, interval, burstTolerance, 60_000);
     }
 
     public LockFreeGcraLimiter(
@@ -18,12 +62,7 @@ public final class LockFreeGcraLimiter {
             long burstTolerance,
             long evictionTimeout
     ) {
-        this.table = new GcraTable(
-                capacity,
-                interval,
-                burstTolerance,
-                evictionTimeout
-        );
+        this(OFF_HEAP_FACTORY, capacity, interval, burstTolerance, evictionTimeout);
     }
 
     public boolean tryAcquire(long key) {
@@ -38,6 +77,7 @@ public final class LockFreeGcraLimiter {
         table.clean(now);
     }
 
+    @Override
     public void close() {
         table.close();
     }
