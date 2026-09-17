@@ -16,7 +16,7 @@ class GcraTableTest {
     void shouldClaimEmptySlot() {
         GcraTable table = new GcraTable(16, 100, 0);
 
-        int index = table.findOrClaim(42);
+        int index = table.findOrClaim(42, 0);
 
         assertTrue(index >= 0);
     }
@@ -25,8 +25,8 @@ class GcraTableTest {
     void shouldFindExistingKey() {
         GcraTable table = new GcraTable(16, 100, 0);
 
-        int first = table.findOrClaim(42);
-        int second = table.findOrClaim(42);
+        int first = table.findOrClaim(42, 0);
+        int second = table.findOrClaim(42, 100);
 
         assertEquals(first, second);
     }
@@ -35,8 +35,8 @@ class GcraTableTest {
     void zeroCanBeValidKey() {
         GcraTable table = new GcraTable(16, 100, 0);
 
-        int first = table.findOrClaim(0);
-        int second = table.findOrClaim(0);
+        int first = table.findOrClaim(0, 0);
+        int second = table.findOrClaim(0, 100);
 
         assertEquals(first, second);
     }
@@ -45,8 +45,8 @@ class GcraTableTest {
     void shouldHandleCollisions() {
         GcraTable table = new GcraTable(2, 100, 0);
 
-        int first = table.findOrClaim(1);
-        int second = table.findOrClaim(3);
+        int first = table.findOrClaim(1, 0);
+        int second = table.findOrClaim(3, 0);
 
         assertNotEquals(first, second);
     }
@@ -60,7 +60,7 @@ class GcraTableTest {
     }
 
     @Test
-    void concurrentClaimsForSameKeyMustReturnSameSlot() 
+    void concurrentClaimsForSameKeyMustReturnSameSlot()
         throws Exception {
 
         GcraTable table = new GcraTable(16, 100, 0);
@@ -78,7 +78,7 @@ class GcraTableTest {
                 futures.add(
                     executor.submit(() -> {
                     start.await();
-                    return table.findOrClaim(42);
+                    return table.findOrClaim(42, 0);
                 }));
             }
 
@@ -95,7 +95,7 @@ class GcraTableTest {
     }
 
     @Test
-    void concurrentClaimsForDifferentKeysMustNotLoseEntries() 
+    void concurrentClaimsForDifferentKeysMustNotLoseEntries()
         throws Exception {
         GcraTable table = new GcraTable(128, 100, 0);
 
@@ -116,7 +116,7 @@ class GcraTableTest {
 
                     for (int i = 0; i < keysPerThread; i++) {
                         long key = (long) threadId * keysPerThread + i;
-                        assertTrue(table.findOrClaim(key) >= 0);
+                        assertTrue(table.findOrClaim(key, 0) >= 0);
                     }
 
                     return null;
@@ -129,9 +129,8 @@ class GcraTableTest {
                 future.get();
             }
 
-            // Every key must still resolve to a slot.
             for (long key = 0; key < threads * keysPerThread; key++) {
-                assertTrue(table.findOrClaim(key) >= 0);
+                assertTrue(table.findOrClaim(key, 100) >= 0);
             }
         } finally {
             executor.shutdown();
