@@ -41,9 +41,7 @@ class CleanerSchedulerTest {
             @Override
             public int findOrClaim(long key, long now) { return 0; }
             @Override
-            public boolean tryAcquire(long key) { return true; }
-            @Override
-            public boolean tryAcquire(long key, long now) { return true; }
+            public AcquireResult acquire(long key, long now) { return AcquireResult.ACQUIRED; }
             @Override
             public void clean(long now) { latch.countDown(); }
             @Override

@@ -156,6 +156,14 @@ public final class LockFreeGcraLimiter implements AutoCloseable {
         }
     }
 
+    public AcquireResult acquire(long key) {
+        return table.acquire(key);
+    }
+
+    public AcquireResult acquire(long key, long now) {
+        return table.acquire(key, now);
+    }
+
     public boolean tryAcquire(long key) {
         return table.tryAcquire(key);
     }
