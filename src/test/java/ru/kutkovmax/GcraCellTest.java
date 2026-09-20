@@ -3,6 +3,7 @@ package ru.kutkovmax;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class GcraCellTest {
 
@@ -44,5 +45,30 @@ class GcraCellTest {
     void defaultEmptyCellIsZero() {
         long empty = GcraCell.pack(GcraCell.EMPTY, 0);
         assertEquals(0, empty);
+    }
+
+    @Test
+    void rejectsNegativeTat() {
+        assertThrows(IllegalArgumentException.class, () -> GcraCell.pack(GcraCell.OCCUPIED, -1));
+    }
+
+    @Test
+    void rejectsTatAbove62Bits() {
+        assertThrows(IllegalArgumentException.class, () -> GcraCell.pack(GcraCell.OCCUPIED, GcraCell.MAX_TAT + 1));
+    }
+
+    @Test
+    void rejectsInvalidState() {
+        assertThrows(IllegalArgumentException.class, () -> GcraCell.pack(4, 0));
+        assertThrows(IllegalArgumentException.class, () -> GcraCell.pack(-1, 0));
+    }
+
+    @Test
+    void namedBitConstantsMatchPackedLayout() {
+        assertEquals(62, GcraCell.TAT_BITS);
+        assertEquals(2, GcraCell.STATE_BITS);
+        assertEquals((1L << 62) - 1, GcraCell.TAT_MASK);
+        assertEquals(0b11L, GcraCell.STATE_MASK);
+        assertEquals(GcraCell.TAT_MASK, GcraCell.MAX_TAT);
     }
 }

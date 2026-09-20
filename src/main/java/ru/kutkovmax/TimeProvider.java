@@ -1,6 +1,6 @@
 package ru.kutkovmax;
 
-public final class TimeProvider {
+final class TimeProvider {
 
     private static final long START_TIME = System.nanoTime();
 

@@ -146,4 +146,21 @@ class GcraLimiterTest {
                 () -> new GcraLimiter(100, -1)
         );
     }
+
+    @Test
+    void intervalAboveTatRangeIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new GcraLimiter(GcraCell.MAX_TAT + 1, 0));
+    }
+
+    @Test
+    void burstToleranceAboveTatRangeIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> new GcraLimiter(1, GcraCell.MAX_TAT + 1));
+    }
+
+    @Test
+    void acquireDoesNotWrapTatOnOverflow() {
+        GcraLimiter limiter = new GcraLimiter(GcraCell.MAX_TAT, 0);
+
+        assertThrows(ArithmeticException.class, () -> limiter.tryAcquire(1));
+    }
 }
