@@ -20,11 +20,11 @@ final class GcraMath {
         }
         if (interval > GcraCell.MAX_TAT) {
             throw new IllegalArgumentException(
-                    "interval exceeds 62-bit TAT range: " + interval + " > " + GcraCell.MAX_TAT);
+                    "interval exceeds " + GcraCell.TAT_BITS + "-bit TAT range: " + interval + " > " + GcraCell.MAX_TAT);
         }
         if (burstTolerance > GcraCell.MAX_TAT) {
             throw new IllegalArgumentException(
-                    "burstTolerance exceeds 62-bit TAT range: " + burstTolerance + " > " + GcraCell.MAX_TAT);
+                    "burstTolerance exceeds " + GcraCell.TAT_BITS + "-bit TAT range: " + burstTolerance + " > " + GcraCell.MAX_TAT);
         }
     }
 
@@ -35,7 +35,7 @@ final class GcraMath {
         }
         if (evictionTimeout > GcraCell.MAX_TAT) {
             throw new IllegalArgumentException(
-                    "evictionTimeout exceeds 62-bit TAT range: " + evictionTimeout + " > " + GcraCell.MAX_TAT);
+                    "evictionTimeout exceeds " + GcraCell.TAT_BITS + "-bit TAT range: " + evictionTimeout + " > " + GcraCell.MAX_TAT);
         }
     }
 
@@ -50,10 +50,10 @@ final class GcraMath {
 
     static long nextTat(long currentTat, long now, long interval) {
         if (now < 0 || now > GcraCell.MAX_TAT) {
-            throw new ArithmeticException("now does not fit into 62-bit TAT range: " + now);
+            throw new ArithmeticException("now does not fit into " + GcraCell.TAT_BITS + "-bit TAT range: " + now);
         }
         if (currentTat < 0 || currentTat > GcraCell.MAX_TAT) {
-            throw new ArithmeticException("current TAT does not fit into 62-bit TAT range: " + currentTat);
+            throw new ArithmeticException("current TAT does not fit into " + GcraCell.TAT_BITS + "-bit TAT range: " + currentTat);
         }
         return addTat(Math.max(currentTat, now), interval);
     }

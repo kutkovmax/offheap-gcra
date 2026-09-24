@@ -6,9 +6,10 @@ final class GcraCell {
     static final int CLAIMING = 1;
     static final int OCCUPIED = 2;
     static final int EVICTING = 3;
+    static final int TOMBSTONE = 4;
 
-    static final int STATE_BITS = 2;
-    static final int TAT_BITS = 62;
+    static final int STATE_BITS = 3;
+    static final int TAT_BITS = 61;
 
     static final long TAT_MASK = (1L << TAT_BITS) - 1;
     static final long STATE_MASK = (1L << STATE_BITS) - 1;
@@ -18,10 +19,10 @@ final class GcraCell {
 
     static long pack(int state, long tat) {
         if (tat < 0 || tat > MAX_TAT) {
-            throw new IllegalArgumentException("tat does not fit into 62 bits");
+            throw new IllegalArgumentException("tat does not fit into " + TAT_BITS + " bits");
         }
         if ((state & ~STATE_MASK) != 0) {
-            throw new IllegalArgumentException("state does not fit into 2 bits");
+            throw new IllegalArgumentException("state does not fit into " + STATE_BITS + " bits");
         }
         return ((long) state << STATE_SHIFT) | tat;
     }
