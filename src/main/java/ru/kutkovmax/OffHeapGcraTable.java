@@ -1,7 +1,6 @@
 package ru.kutkovmax;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.MemoryLayout;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandles;
@@ -14,7 +13,7 @@ final class OffHeapGcraTable implements GcraTable {
     private static final VarHandle LONG_AT;
 
     static {
-        LONG_AT = MethodHandles.memorySegmentViewVarHandle(ELEMENT);
+        LONG_AT = ValueLayout.JAVA_LONG.varHandle();
     }
 
     private final Arena arena;
@@ -62,167 +61,190 @@ final class OffHeapGcraTable implements GcraTable {
     }
 
     OffHeapGcraTable(int capacity, long interval, long burstTolerance) {
-        this(capacity, interval, burstTolerance, 60_000);
+        this(capacity, interval, burstTolerance, 60_000_000_000L); // 60 секунд в наносекундах
     }
 
     @Override
     public int findOrClaim(long key, long now) {
         int start = indexFor(key);
-        int expiredIndex = -1;
 
-        for (int i = 0; i < capacity; i++) {
-            int index = (start + i) & mask;
+        retry:
+        while (true) {
+            int firstTombstone = -1;
 
-            while (true) {
+            for (int i = 0; i < capacity; i++) {
+                int index = (start + i) & mask;
                 long cell = getVolatile(cells, index);
                 int state = GcraCell.state(cell);
 
                 if (state == GcraCell.OCCUPIED) {
-                    if (getPlain(keys, index) == key) {
+                    if (getAcquire(keys, index) == key) {
                         return index;
                     }
+                    continue;
+                }
 
-                    long last = getAcquire(lastAccess, index);
-                    if (expiredIndex < 0 && now - last >= evictionTimeout) {
-                        expiredIndex = index;
+                if (state == GcraCell.TOMBSTONE) {
+                    if (firstTombstone < 0) {
+                        firstTombstone = index;
                     }
-
-                    break;
+                    continue;
                 }
 
                 if (state == GcraCell.CLAIMING || state == GcraCell.EVICTING) {
                     Thread.onSpinWait();
+                    i--;
                     continue;
                 }
 
                 if (state == GcraCell.EMPTY) {
-                    if (expiredIndex >= 0) {
-                        int target = expiredIndex;
-
-                        long targetCell = getVolatile(cells, target);
-                        if (GcraCell.state(targetCell) != GcraCell.OCCUPIED) {
-                            expiredIndex = -1;
-                            continue;
-                        }
-
-                        long targetLast = getAcquire(lastAccess, target);
-                        if (now - targetLast < evictionTimeout) {
-                            expiredIndex = -1;
-                            continue;
-                        }
-
-                        long targetTat = GcraCell.tat(targetCell);
-                        long claimingCell = GcraCell.pack(GcraCell.CLAIMING, targetTat);
-
-                        if (!compareAndSet(cells, target, targetCell, claimingCell)) {
-                            expiredIndex = -1;
-                            continue;
-                        }
-
-                        setRelease(keys, target, key);
-
-                        long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, now);
-                        setVolatile(cells, target, occupiedCell);
-
-                        return target;
-                    }
-
-                    long emptyCell = GcraCell.pack(GcraCell.EMPTY, 0);
-                    if (cell != emptyCell) {
-                        continue;
-                    }
+                    int target = (firstTombstone >= 0) ? firstTombstone : index;
+                    long targetExpected = (firstTombstone >= 0)
+                            ? GcraCell.pack(GcraCell.TOMBSTONE, 0)
+                            : GcraCell.pack(GcraCell.EMPTY, 0);
                     long claimingCell = GcraCell.pack(GcraCell.CLAIMING, 0);
 
-                    if (!compareAndSet(cells, index, emptyCell, claimingCell)) {
-                        continue;
+                    if (!compareAndSet(cells, target, targetExpected, claimingCell)) {
+                        continue retry;
                     }
 
-                    setRelease(keys, index, key);
-
+                    setRelease(keys, target, key);
+                    setRelease(lastAccess, target, now);
                     long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, now);
-                    setVolatile(cells, index, occupiedCell);
+                    setVolatile(cells, target, occupiedCell);
+                    return target;
+                }
+            }
 
-                    return index;
+            if (firstTombstone >= 0) {
+                int target = firstTombstone;
+                long tombstoneCell = GcraCell.pack(GcraCell.TOMBSTONE, 0);
+                long claimingCell = GcraCell.pack(GcraCell.CLAIMING, 0);
+
+                if (!compareAndSet(cells, target, tombstoneCell, claimingCell)) {
+                    continue retry;
                 }
 
-                throw new IllegalStateException("Unexpected cell state: " + state);
+                setRelease(keys, target, key);
+                setRelease(lastAccess, target, now);
+                long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, now);
+                setVolatile(cells, target, occupiedCell);
+                return target;
             }
+
+            return -1;
         }
-
-        if (expiredIndex >= 0) {
-            int index = expiredIndex;
-
-            long cell = getVolatile(cells, index);
-            if (GcraCell.state(cell) != GcraCell.OCCUPIED) {
-                return -1;
-            }
-
-            long last = getAcquire(lastAccess, index);
-            if (now - last < evictionTimeout) {
-                return -1;
-            }
-
-            long tat = GcraCell.tat(cell);
-            long claimingCell = GcraCell.pack(GcraCell.CLAIMING, tat);
-
-            if (!compareAndSet(cells, index, cell, claimingCell)) {
-                return -1;
-            }
-
-            setRelease(keys, index, key);
-
-            long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, now);
-            setVolatile(cells, index, occupiedCell);
-
-            return index;
-        }
-
-        return -1;
     }
 
     @Override
     public boolean tryAcquire(long key) {
-        long now = TimeProvider.nowNanos();
-        int index = findOrClaim(key, now);
-        if (index < 0) {
-            return false;
-        }
-        return tryAcquireCell(index, now);
+        return tryAcquire(key, TimeProvider.nowNanos());
     }
 
     @Override
     public boolean tryAcquire(long key, long now) {
-        int index = findOrClaim(key, now);
-        if (index < 0) {
-            return false;
-        }
-        return tryAcquireCell(index, now);
-    }
+        int start = indexFor(key);
 
-    private boolean tryAcquireCell(int index, long now) {
+        retry:
         while (true) {
-            long currentCell = getVolatile(cells, index);
-            int state = GcraCell.state(currentCell);
+            int firstTombstone = -1;
 
-            if (state != GcraCell.OCCUPIED) {
-                Thread.onSpinWait();
-                continue;
+            for (int i = 0; i < capacity; i++) {
+                int index = (start + i) & mask;
+                long cell = getVolatile(cells, index);
+                int state = GcraCell.state(cell);
+
+                if (state == GcraCell.OCCUPIED) {
+                    if (getAcquire(keys, index) == key) {
+                        long currentTat = GcraCell.tat(cell);
+                        if (now < currentTat - burstTolerance) {
+                            return false;
+                        }
+                        long newTat = GcraMath.nextTat(currentTat, now, interval);
+                        long newCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
+                        if (compareAndSet(cells, index, cell, newCell)) {
+                            setRelease(lastAccess, index, now);
+                            return true;
+                        }
+                        continue retry;
+                    }
+                    continue;
+                }
+
+                if (state == GcraCell.TOMBSTONE) {
+                    if (firstTombstone < 0) {
+                        firstTombstone = index;
+                    }
+                    continue;
+                }
+
+                if (state == GcraCell.CLAIMING || state == GcraCell.EVICTING) {
+                    Thread.onSpinWait();
+                    i--;
+                    continue;
+                }
+
+                if (state == GcraCell.EMPTY) {
+                    int target = (firstTombstone >= 0) ? firstTombstone : index;
+                    long targetExpected = (firstTombstone >= 0)
+                            ? GcraCell.pack(GcraCell.TOMBSTONE, 0)
+                            : GcraCell.pack(GcraCell.EMPTY, 0);
+                    long claimingCell = GcraCell.pack(GcraCell.CLAIMING, 0);
+
+                    if (!compareAndSet(cells, target, targetExpected, claimingCell)) {
+                        continue retry;
+                    }
+
+                    setRelease(keys, target, key);
+                    setRelease(lastAccess, target, now);
+                    long newTat = GcraMath.newKeyTat(now, interval);
+                    long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
+                    setVolatile(cells, target, occupiedCell);
+                    return true;
+                }
             }
 
-            long currentTat = GcraCell.tat(currentCell);
+            if (firstTombstone >= 0) {
+                int target = firstTombstone;
+                long tombstoneCell = GcraCell.pack(GcraCell.TOMBSTONE, 0);
+                long claimingCell = GcraCell.pack(GcraCell.CLAIMING, 0);
 
-            if (now < currentTat - burstTolerance) {
-                return false;
-            }
+                if (!compareAndSet(cells, target, tombstoneCell, claimingCell)) {
+                    continue retry;
+                }
 
-            long newTat = GcraMath.nextTat(currentTat, now, interval);
-            long newCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
-
-            if (compareAndSet(cells, index, currentCell, newCell)) {
-                setRelease(lastAccess, index, now);
+                setRelease(keys, target, key);
+                setRelease(lastAccess, target, now);
+                long newTat = GcraMath.newKeyTat(now, interval);
+                long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
+                setVolatile(cells, target, occupiedCell);
                 return true;
             }
+
+            return false;
         }
+    }
+
+    boolean tryAcquireCell(int index, long expectedKey, long now) {
+        long currentCell = getVolatile(cells, index);
+        int state = GcraCell.state(currentCell);
+        if (state != GcraCell.OCCUPIED) {
+            return false;
+        }
+        if (getAcquire(keys, index) != expectedKey) {
+            return false;
+        }
+        long currentTat = GcraCell.tat(currentCell);
+        if (now < currentTat - burstTolerance) {
+            return false;
+        }
+        long newTat = GcraMath.nextTat(currentTat, now, interval);
+        long newCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
+        if (compareAndSet(cells, index, currentCell, newCell)) {
+            setRelease(lastAccess, index, now);
+            return true;
+        }
+        return false;
     }
 
     private int indexFor(long key) {
@@ -236,9 +258,13 @@ final class OffHeapGcraTable implements GcraTable {
     }
 
     private void cleanerLoop() {
+        long sleepNanos = Math.max(10_000_000L, evictionTimeout / 2);
+        long sleepMillis = sleepNanos / 1_000_000L;
+        int sleepNanosPart = (int) (sleepNanos % 1_000_000L);
+
         while (running) {
             try {
-                Thread.sleep(evictionTimeout / 2);
+                Thread.sleep(sleepMillis, sleepNanosPart);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
@@ -255,17 +281,23 @@ final class OffHeapGcraTable implements GcraTable {
     }
 
     private void cleanCell(int index, long now) {
-        long last = getAcquire(lastAccess, index);
-        if (now - last < evictionTimeout) {
-            return;
-        }
-
         long currentCell = getVolatile(cells, index);
         if (GcraCell.state(currentCell) != GcraCell.OCCUPIED) {
             return;
         }
 
+        long last = getAcquire(lastAccess, index);
+        if (now <= last || now - last < evictionTimeout) {
+            return;
+        }
 
+        long evictingCell = GcraCell.pack(GcraCell.EVICTING, 0);
+        if (compareAndSet(cells, index, currentCell, evictingCell)) {
+            setRelease(keys, index, 0L);
+            setRelease(lastAccess, index, 0L);
+            long tombstoneCell = GcraCell.pack(GcraCell.TOMBSTONE, 0);
+            setVolatile(cells, index, tombstoneCell);
+        }
     }
 
     @Override
