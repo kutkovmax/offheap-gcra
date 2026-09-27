@@ -22,9 +22,9 @@ final class HeapGcraTable implements GcraTable {
 
     private final int mask;
 
-    private final long interval;
-    private final long burstTolerance;
-    private final long evictionTimeout;
+    private final long intervalNanos;
+    private final long burstToleranceNanos;
+    private final long evictionTimeoutNanos;
 
     private void checkOpen() {
         if (lifecycle.get() != OPEN) {
@@ -34,26 +34,25 @@ final class HeapGcraTable implements GcraTable {
 
     HeapGcraTable(
             int capacity,
-            long interval,
-            long burstTolerance,
-            long evictionTimeout
+            long intervalNanos,
+            long burstToleranceNanos,
+            long evictionTimeoutNanos
     ) {
         GcraMath.validateCapacity(capacity);
-        GcraMath.validateConfiguration(interval, burstTolerance, evictionTimeout);
+        GcraMath.validateConfiguration(intervalNanos, burstToleranceNanos, evictionTimeoutNanos);
 
         this.keys = new long[capacity];
         this.cells = new long[capacity];
         this.lastAccess = new long[capacity];
         this.mask = capacity - 1;
 
-        this.interval = interval;
-        this.burstTolerance = burstTolerance;
-        this.evictionTimeout = evictionTimeout;
+        this.intervalNanos = intervalNanos;
+        this.burstToleranceNanos = burstToleranceNanos;
+        this.evictionTimeoutNanos = evictionTimeoutNanos;
     }
 
-    HeapGcraTable(int capacity, long interval, long burstTolerance) {
-        // ИСПРАВЛЕНИЕ: 60 секунд в наносекундах (60_000_000_000L), а не 60_000 (микросекунды)
-        this(capacity, interval, burstTolerance, 60_000_000_000L);
+    HeapGcraTable(int capacity, long intervalNanos, long burstToleranceNanos) {
+        this(capacity, intervalNanos, burstToleranceNanos, 60_000_000_000L);
     }
 
     @Override
@@ -151,10 +150,10 @@ final class HeapGcraTable implements GcraTable {
                 if (state == GcraCell.OCCUPIED) {
                     if ((long) KEYS_HANDLE.getAcquire(keys, index) == key) {
                         long currentTat = GcraCell.tat(cell);
-                        if (now < currentTat - burstTolerance) {
+                        if (now < currentTat - burstToleranceNanos) {
                             return false;
                         }
-                        long newTat = GcraMath.nextTat(currentTat, now, interval);
+                        long newTat = GcraMath.nextTat(currentTat, now, intervalNanos);
                         long newCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
                         if (CELL_HANDLE.compareAndSet(cells, index, cell, newCell)) {
                             LAST_ACCESS_HANDLE.setRelease(lastAccess, index, now);
@@ -191,7 +190,7 @@ final class HeapGcraTable implements GcraTable {
 
                     KEYS_HANDLE.setRelease(keys, target, key);
                     LAST_ACCESS_HANDLE.setRelease(lastAccess, target, now);
-                    long newTat = GcraMath.newKeyTat(now, interval);
+                    long newTat = GcraMath.newKeyTat(now, intervalNanos);
                     long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
                     CELL_HANDLE.setVolatile(cells, target, occupiedCell);
                     return true;
@@ -209,7 +208,7 @@ final class HeapGcraTable implements GcraTable {
 
                 KEYS_HANDLE.setRelease(keys, target, key);
                 LAST_ACCESS_HANDLE.setRelease(lastAccess, target, now);
-                long newTat = GcraMath.newKeyTat(now, interval);
+                long newTat = GcraMath.newKeyTat(now, intervalNanos);
                 long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
                 CELL_HANDLE.setVolatile(cells, target, occupiedCell);
                 return true;
@@ -229,10 +228,10 @@ final class HeapGcraTable implements GcraTable {
             return false;
         }
         long currentTat = GcraCell.tat(currentCell);
-        if (now < currentTat - burstTolerance) {
+        if (now < currentTat - burstToleranceNanos) {
             return false;
         }
-        long newTat = GcraMath.nextTat(currentTat, now, interval);
+        long newTat = GcraMath.nextTat(currentTat, now, intervalNanos);
         long newCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
         if (CELL_HANDLE.compareAndSet(cells, index, currentCell, newCell)) {
             LAST_ACCESS_HANDLE.setRelease(lastAccess, index, now);
@@ -266,7 +265,7 @@ final class HeapGcraTable implements GcraTable {
         }
 
         long last = (long) LAST_ACCESS_HANDLE.getAcquire(lastAccess, index);
-        if (now <= last || now - last < evictionTimeout) {
+        if (now <= last || now - last < evictionTimeoutNanos) {
             return;
         }
 
