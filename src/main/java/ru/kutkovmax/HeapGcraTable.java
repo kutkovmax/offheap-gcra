@@ -2,12 +2,19 @@ package ru.kutkovmax;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.util.concurrent.atomic.AtomicInteger;
 
 final class HeapGcraTable implements GcraTable {
 
     private static final VarHandle KEYS_HANDLE = MethodHandles.arrayElementVarHandle(long[].class);
     private static final VarHandle CELL_HANDLE = MethodHandles.arrayElementVarHandle(long[].class);
     private static final VarHandle LAST_ACCESS_HANDLE = MethodHandles.arrayElementVarHandle(long[].class);
+
+    private static final int OPEN = 0;
+    private static final int CLOSING = 1;
+    private static final int CLOSED = 2;
+
+    private final AtomicInteger lifecycle = new AtomicInteger(OPEN);
 
     private final long[] keys;
     private final long[] cells;
@@ -21,6 +28,12 @@ final class HeapGcraTable implements GcraTable {
 
     private final Thread cleaner;
     private volatile boolean running;
+
+    private void checkOpen() {
+        if (lifecycle.get() != OPEN) {
+            throw new IllegalStateException("Limiter is closed");
+        }
+    }
 
     HeapGcraTable(
             int capacity,
@@ -53,6 +66,7 @@ final class HeapGcraTable implements GcraTable {
 
     @Override
     public int findOrClaim(long key, long now) {
+        checkOpen();
         int start = indexFor(key);
 
         retry:
@@ -130,6 +144,7 @@ final class HeapGcraTable implements GcraTable {
 
     @Override
     public boolean tryAcquire(long key, long now) {
+        checkOpen();
         int start = indexFor(key);
 
         retry:
@@ -262,6 +277,7 @@ final class HeapGcraTable implements GcraTable {
 
     @Override
     public void clean(long now) {
+        checkOpen();
         for (int index = 0; index < cells.length; index++) {
             cleanCell(index, now);
         }
@@ -290,6 +306,9 @@ final class HeapGcraTable implements GcraTable {
 
     @Override
     public void close() {
+        if (!lifecycle.compareAndSet(OPEN, CLOSING)) {
+            return;
+        }
         running = false;
         cleaner.interrupt();
         try {
@@ -297,5 +316,6 @@ final class HeapGcraTable implements GcraTable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+        lifecycle.set(CLOSED);
     }
 }
