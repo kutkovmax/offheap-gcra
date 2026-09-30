@@ -129,12 +129,12 @@ final class HeapGcraTable implements GcraTable {
     }
 
     @Override
-    public boolean tryAcquire(long key) {
-        return tryAcquire(key, TimeProvider.nowNanos());
+    public AcquireResult acquire(long key) {
+        return acquire(key, TimeProvider.nowNanos());
     }
 
     @Override
-    public boolean tryAcquire(long key, long now) {
+    public AcquireResult acquire(long key, long now) {
         checkOpen();
         int start = indexFor(key);
 
@@ -151,13 +151,13 @@ final class HeapGcraTable implements GcraTable {
                     if ((long) KEYS_HANDLE.getAcquire(keys, index) == key) {
                         long currentTat = GcraCell.tat(cell);
                         if (now < currentTat - burstToleranceNanos) {
-                            return false;
+                            return AcquireResult.RATE_LIMITED;
                         }
                         long newTat = GcraMath.nextTat(currentTat, now, intervalNanos);
                         long newCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
                         if (CELL_HANDLE.compareAndSet(cells, index, cell, newCell)) {
                             LAST_ACCESS_HANDLE.setRelease(lastAccess, index, now);
-                            return true;
+                            return AcquireResult.ACQUIRED;
                         }
                         continue retry;
                     }
@@ -193,7 +193,7 @@ final class HeapGcraTable implements GcraTable {
                     long newTat = GcraMath.newKeyTat(now, intervalNanos);
                     long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
                     CELL_HANDLE.setVolatile(cells, target, occupiedCell);
-                    return true;
+                    return AcquireResult.ACQUIRED;
                 }
             }
 
@@ -211,11 +211,21 @@ final class HeapGcraTable implements GcraTable {
                 long newTat = GcraMath.newKeyTat(now, intervalNanos);
                 long occupiedCell = GcraCell.pack(GcraCell.OCCUPIED, newTat);
                 CELL_HANDLE.setVolatile(cells, target, occupiedCell);
-                return true;
+                return AcquireResult.ACQUIRED;
             }
 
-            return false;
+            return AcquireResult.CAPACITY_EXHAUSTED;
         }
+    }
+
+    @Override
+    public boolean tryAcquire(long key) {
+        return acquire(key) == AcquireResult.ACQUIRED;
+    }
+
+    @Override
+    public boolean tryAcquire(long key, long now) {
+        return acquire(key, now) == AcquireResult.ACQUIRED;
     }
 
     boolean tryAcquireCell(int index, long expectedKey, long now) {

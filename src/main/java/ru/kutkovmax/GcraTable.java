@@ -4,9 +4,19 @@ public interface GcraTable extends AutoCloseable {
 
     int findOrClaim(long key, long now);
 
-    boolean tryAcquire(long key);
+    default AcquireResult acquire(long key) {
+        return acquire(key, TimeProvider.nowNanos());
+    }
 
-    boolean tryAcquire(long key, long now);
+    AcquireResult acquire(long key, long now);
+
+    default boolean tryAcquire(long key) {
+        return acquire(key) == AcquireResult.ACQUIRED;
+    }
+
+    default boolean tryAcquire(long key, long now) {
+        return acquire(key, now) == AcquireResult.ACQUIRED;
+    }
 
     void clean(long now);
 
